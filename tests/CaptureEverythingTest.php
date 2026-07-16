@@ -16,6 +16,8 @@ class CaptureEverythingTest extends TestCase
             'Illuminate\Foundation\Events\LocaleUpdated',
             'Illuminate\Routing\Events\RouteMatched',
             'Illuminate\Cache\Events\CacheHit',
+            'Illuminate\Database\Events\QueryExecuted',
+            'Illuminate\Database\Events\ConnectionEstablished',
             'eloquent.booting: App\Models\Order',
             'eloquent.retrieved: App\Models\Order',
             'bootstrapping: Illuminate\Foundation\Bootstrap\BootProviders',

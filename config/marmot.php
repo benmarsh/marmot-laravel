@@ -45,6 +45,9 @@ return [
         'Illuminate\\Foundation\\Events\\*',
         'Illuminate\\Routing\\Events\\*',
         'Illuminate\\Cache\\Events\\*',
+        // Raw query/connection volume is plumbing, not business signal.
+        // Slow-query detection (PRD 6.6) will be payload-based, not name-based.
+        'Illuminate\\Database\\Events\\*',
         'Illuminate\\Log\\Events\\*',
         'Illuminate\\Console\\Events\\*',
         'Illuminate\\Session\\*',
