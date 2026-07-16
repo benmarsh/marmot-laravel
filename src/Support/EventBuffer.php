@@ -79,6 +79,7 @@ class EventBuffer
                 'headers' => [
                     'Authorization' => 'Bearer '.config('marmot.api_key'),
                     'Content-Type' => 'application/json',
+                    'Accept' => 'application/json',
                 ],
                 'json' => [
                     'source' => 'laravel',
