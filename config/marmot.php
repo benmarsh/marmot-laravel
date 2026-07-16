@@ -55,6 +55,14 @@ return [
         'eloquent.booting*',
         'eloquent.booted*',
         'eloquent.retrieved*',
+        // Transitional lifecycle events pair 1:1 with their past-tense
+        // counterparts (saving/saved, creating/created…) — keeping both
+        // doubles stream count and produces duplicate alerts.
+        'eloquent.saving*',
+        'eloquent.creating*',
+        'eloquent.updating*',
+        'eloquent.deleting*',
+        'eloquent.restoring*',
         'bootstrapping*',
         'bootstrapped*',
         'composing*',
