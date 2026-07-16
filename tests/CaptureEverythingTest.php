@@ -20,6 +20,7 @@ class CaptureEverythingTest extends TestCase
             'eloquent.retrieved: App\Models\Order',
             'bootstrapping: Illuminate\Foundation\Bootstrap\BootProviders',
             'composing: welcome',
+            'creating: welcome',
         ];
 
         $captured = [
