@@ -16,6 +16,14 @@ class ProviderInertWithoutApiKeyTest extends TestCase
         $this->assertSame([], $this->app->make(EventBuffer::class)->pending());
     }
 
+    public function test_no_canary_is_scheduled_when_inert(): void
+    {
+        $schedule = $this->app->make(\Illuminate\Console\Scheduling\Schedule::class);
+
+        $this->assertNull(collect($schedule->events())
+            ->first(fn ($event) => $event->description === 'marmot-canary'));
+    }
+
     public function test_config_merges_with_defaults(): void
     {
         $this->assertTrue(config('marmot.enabled'));

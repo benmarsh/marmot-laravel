@@ -2,6 +2,7 @@
 
 namespace Marmot\Laravel;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
@@ -31,6 +32,18 @@ class MarmotServiceProvider extends ServiceProvider
         }
 
         Event::listen('*', CaptureEverything::class);
+
+        // Canary heartbeat: fires every minute wherever the host app's
+        // scheduler runs, giving Marmot a stream that proves the whole
+        // pipeline (host cron -> SDK -> ingest) is alive. Watch it with a
+        // tight flatline threshold server-side.
+        if (config('marmot.canary', true)) {
+            $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+                $schedule->call(fn () => event('marmot.canary'))
+                    ->everyMinute()
+                    ->name('marmot-canary');
+            });
+        }
 
         $this->app->terminating(fn () => $this->app->make(EventBuffer::class)->flush());
 

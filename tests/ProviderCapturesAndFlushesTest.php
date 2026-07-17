@@ -32,6 +32,17 @@ class ProviderCapturesAndFlushesTest extends TestCase
         $this->app->make(EventBuffer::class)->flush(); // endpoint unset: clears without a request
     }
 
+    public function test_canary_heartbeat_is_scheduled(): void
+    {
+        $schedule = $this->app->make(\Illuminate\Console\Scheduling\Schedule::class);
+
+        $canary = collect($schedule->events())
+            ->first(fn ($event) => $event->description === 'marmot-canary');
+
+        $this->assertNotNull($canary);
+        $this->assertSame('* * * * *', $canary->expression);
+    }
+
     public function test_terminating_flushes_the_buffer_to_the_endpoint(): void
     {
         $history = [];

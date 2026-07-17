@@ -34,6 +34,17 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Canary heartbeat
+    |--------------------------------------------------------------------------
+    | When enabled (and the SDK is active), a marmot.canary event fires every
+    | minute via the host app's scheduler — a heartbeat proving the whole
+    | pipeline is alive. Costs one tiny counter per minute.
+    */
+
+    'canary' => env('MARMOT_CANARY', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Ignored event patterns
     |--------------------------------------------------------------------------
     | Framework plumbing only. Eloquent lifecycle events (created/updated/
