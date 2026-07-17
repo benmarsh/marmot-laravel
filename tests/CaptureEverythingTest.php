@@ -27,6 +27,13 @@ class CaptureEverythingTest extends TestCase
             'bootstrapping: Illuminate\Foundation\Bootstrap\BootProviders',
             'composing: welcome',
             'creating: welcome',
+            'cache:clearing',
+            'cache:cleared',
+            'Illuminate\Console\Events\ArtisanStarting',
+            'Illuminate\Console\Events\CommandStarting',
+            'Illuminate\Console\Events\CommandFinished',
+            'Illuminate\Console\Events\ScheduledTaskStarting',
+            'Illuminate\Console\Events\ScheduledBackgroundTaskFinished',
         ];
 
         $captured = [
@@ -34,6 +41,10 @@ class CaptureEverythingTest extends TestCase
             'eloquent.updated: App\Models\Subscription',
             'Illuminate\Auth\Events\Registered',
             'App\Events\OrderPlaced',
+            // The cron dead-man's-switch trio (PRD 6.6).
+            'Illuminate\Console\Events\ScheduledTaskFinished',
+            'Illuminate\Console\Events\ScheduledTaskFailed',
+            'Illuminate\Console\Events\ScheduledTaskSkipped',
         ];
 
         foreach ([...$ignored, ...$captured] as $eventName) {

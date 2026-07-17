@@ -40,7 +40,7 @@ class MarmotServiceProvider extends ServiceProvider
         if (config('marmot.canary', true)) {
             $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
                 $schedule->call(fn () => event('marmot.canary'))
-                    ->everyMinute()
+                    ->cron(config('marmot.canary_cron', '* * * * *'))
                     ->name('marmot-canary');
             });
         }

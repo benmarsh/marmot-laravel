@@ -45,6 +45,16 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Canary cron expression
+    |--------------------------------------------------------------------------
+    | How often the canary fires. Every minute unless you are deliberately
+    | degrading it (e.g. Marmot's own induced-dip detection test).
+    */
+
+    'canary_cron' => env('MARMOT_CANARY_CRON', '* * * * *'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Ignored event patterns
     |--------------------------------------------------------------------------
     | Framework plumbing only. Eloquent lifecycle events (created/updated/
@@ -60,7 +70,14 @@ return [
         // Slow-query detection (PRD 6.6) will be payload-based, not name-based.
         'Illuminate\\Database\\Events\\*',
         'Illuminate\\Log\\Events\\*',
-        'Illuminate\\Console\\Events\\*',
+        // Console events are ignored individually, not by namespace:
+        // ScheduledTask{Finished,Failed,Skipped} must stay captured — they
+        // are the cron dead-man's-switch (PRD 6.6) and free baseline signal.
+        'Illuminate\\Console\\Events\\ArtisanStarting',
+        'Illuminate\\Console\\Events\\CommandStarting',
+        'Illuminate\\Console\\Events\\CommandFinished',
+        'Illuminate\\Console\\Events\\ScheduledTaskStarting',
+        'Illuminate\\Console\\Events\\ScheduledBackgroundTaskFinished',
         'Illuminate\\Session\\*',
         'Illuminate\\View\\*',
         'eloquent.booting*',
@@ -78,6 +95,8 @@ return [
         'bootstrapped*',
         'composing*',
         'creating:*',
+        // Deploy-time artisan plumbing (cache:clearing / cache:cleared).
+        'cache:*',
     ],
 
 ];
