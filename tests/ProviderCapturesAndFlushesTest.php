@@ -43,6 +43,21 @@ class ProviderCapturesAndFlushesTest extends TestCase
         $this->assertSame('* * * * *', $canary->expression);
     }
 
+    public function test_canary_fires_at_most_once_per_minute_across_schedule_executions(): void
+    {
+        Event::fake();
+
+        $canary = collect($this->app->make(\Illuminate\Console\Scheduling\Schedule::class)->events())
+            ->first(fn ($event) => $event->description === 'marmot-canary');
+
+        // A second schedule execution in the same clock minute (manual
+        // schedule:run, stacked crons) must not double-fire the heartbeat.
+        $canary->run($this->app);
+        $canary->run($this->app);
+
+        Event::assertDispatchedTimes('marmot.canary', 1);
+    }
+
     public function test_terminating_flushes_the_buffer_to_the_endpoint(): void
     {
         $history = [];

@@ -4,6 +4,7 @@ namespace Marmot\Laravel;
 
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Marmot\Laravel\Listeners\CaptureEverything;
@@ -39,7 +40,23 @@ class MarmotServiceProvider extends ServiceProvider
         // tight flatline threshold server-side.
         if (config('marmot.canary', true)) {
             $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
-                $schedule->call(fn () => event('marmot.canary'))
+                $schedule->call(function () {
+                    // At most one fire per clock minute: extra schedule
+                    // executions in the same minute (manual schedule:run,
+                    // stacked delayed crons, a second server) must not
+                    // inflate the heartbeat — a 60/hr canary that can read
+                    // 87 corrupts every baseline built on it.
+                    try {
+                        $fire = Cache::add('marmot:canary:'.gmdate('YmdHi'), true, 120);
+                    } catch (Throwable) {
+                        // Cache unavailable: firing twice beats never firing.
+                        $fire = true;
+                    }
+
+                    if ($fire) {
+                        event('marmot.canary');
+                    }
+                })
                     ->cron(config('marmot.canary_cron', '* * * * *'))
                     ->name('marmot-canary');
             });
