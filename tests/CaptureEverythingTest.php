@@ -20,6 +20,7 @@ class CaptureEverythingTest extends TestCase
             'Illuminate\Database\Events\ConnectionEstablished',
             'eloquent.booting: App\Models\Order',
             'eloquent.retrieved: App\Models\Order',
+            'eloquent.saved: App\Models\Order',
             'eloquent.saving: App\Models\Order',
             'eloquent.creating: App\Models\Order',
             'eloquent.updating: App\Models\Order',

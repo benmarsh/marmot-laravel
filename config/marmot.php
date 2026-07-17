@@ -86,6 +86,11 @@ return [
         // Transitional lifecycle events pair 1:1 with their past-tense
         // counterparts (saving/saved, creating/created…) — keeping both
         // doubles stream count and produces duplicate alerts.
+        // `saved` is redundant with created/updated EXCEPT for no-change
+        // saves (save() on a clean model fires saved, nothing else) — and
+        // those are noise: an import re-saving unchanged rows produced a
+        // steady 56/hr phantom stream in production.
+        'eloquent.saved*',
         'eloquent.saving*',
         'eloquent.creating*',
         'eloquent.updating*',
