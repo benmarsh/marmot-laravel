@@ -84,6 +84,12 @@ class EventBuffer
                 'json' => [
                     'source' => 'laravel',
                     'sdk_version' => self::SDK_VERSION,
+                    // One nonce per flush: however this POST gets duplicated
+                    // in transit (proxy retries, forked children re-flushing,
+                    // infrastructure we haven't met yet), the server counts it
+                    // once. Found the hard way: gbpm's canary — hard-capped at
+                    // 60/hr by the minute guard — read 103.
+                    'nonce' => bin2hex(random_bytes(16)),
                     'events' => $events,
                 ],
             ]);
