@@ -48,7 +48,7 @@ class BackfillCommandTest extends TestCase
         $stack = HandlerStack::create($this->mock);
         $stack->push(Middleware::history($this->history));
 
-        $this->app->instance(ClientInterface::class, new Client(['handler' => $stack]));
+        $this->app->instance('marmot.http_client', new Client(['handler' => $stack]));
     }
 
     private function seedOrders(string $hour, int $count): void

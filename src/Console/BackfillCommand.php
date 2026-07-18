@@ -351,8 +351,11 @@ class BackfillCommand extends Command
 
     private function client(): ClientInterface
     {
-        return $this->client ??= $this->laravel->bound(ClientInterface::class)
-            ? $this->laravel->make(ClientInterface::class)
+        // 'marmot.http_client' is the test seam — never resolve the global
+        // ClientInterface binding, which host-app packages configure with
+        // their own base URIs, headers, and retry middleware.
+        return $this->client ??= $this->laravel->bound('marmot.http_client')
+            ? $this->laravel->make('marmot.http_client')
             : new Client;
     }
 }

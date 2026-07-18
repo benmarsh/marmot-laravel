@@ -17,7 +17,17 @@ class MarmotServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/marmot.php', 'marmot');
 
-        $this->app->singleton(EventBuffer::class);
+        // Explicit construction — NEVER let the container auto-inject
+        // Guzzle's ClientInterface. Host apps bind it for their own purposes
+        // (laravel-openrouter binds a client with retry-on-timeout ×5 and
+        // attribution headers), and auto-injection quietly routed every
+        // flush through it: each >1s ingest response became up to six
+        // deliveries of the same batch. Tests inject via 'marmot.http_client'.
+        $this->app->singleton(EventBuffer::class, function ($app) {
+            return new EventBuffer(
+                $app->bound('marmot.http_client') ? $app->make('marmot.http_client') : null,
+            );
+        });
     }
 
     public function boot(): void
