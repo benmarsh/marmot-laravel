@@ -26,6 +26,10 @@ class MarmotServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../config/marmot.php' => config_path('marmot.php'),
             ], 'marmot-config');
+
+            // Registered before the enabled-guard: an unconfigured install
+            // gets a helpful error from the command, not "command not found".
+            $this->commands([Console\BackfillCommand::class]);
         }
 
         if (! config('marmot.enabled') || ! config('marmot.api_key')) {
