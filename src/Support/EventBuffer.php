@@ -24,11 +24,11 @@ class EventBuffer
     {
     }
 
-    public function push(string $streamName): void
+    public function push(string $streamName, int $count = 1): void
     {
         $key = $streamName.self::KEY_DELIMITER.gmdate('Y-m-d\TH:i:00\Z');
 
-        $this->counts[$key] = ($this->counts[$key] ?? 0) + 1;
+        $this->counts[$key] = ($this->counts[$key] ?? 0) + $count;
     }
 
     /**
