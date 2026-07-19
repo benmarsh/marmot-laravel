@@ -39,7 +39,7 @@ class MarmotServiceProvider extends ServiceProvider
 
             // Registered before the enabled-guard: an unconfigured install
             // gets a helpful error from the command, not "command not found".
-            $this->commands([Console\BackfillCommand::class]);
+            $this->commands([Console\BackfillCommand::class, Console\DeployCommand::class]);
         }
 
         if (! config('marmot.enabled') || ! config('marmot.api_key')) {

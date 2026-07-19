@@ -27,6 +27,22 @@ class CaptureEverything
 
     public function handle(string $eventName, array $payload): void
     {
+        // Maintenance mode is a MARKER, not a count: artisan down/up become
+        // window boundaries server-side (flatline suppression, chart shading)
+        // — sent immediately, before the ignore check would swallow the
+        // Foundation namespace they live in.
+        if ($eventName === 'Illuminate\Foundation\Events\MaintenanceModeEnabled') {
+            app(\Marmot\Laravel\Support\MarkerClient::class)->post('maintenance.started');
+
+            return;
+        }
+
+        if ($eventName === 'Illuminate\Foundation\Events\MaintenanceModeDisabled') {
+            app(\Marmot\Laravel\Support\MarkerClient::class)->post('maintenance.ended');
+
+            return;
+        }
+
         // A capture-mode flag, not ignore-list curation: updates are off by
         // default (uninterpretable without attributes — capture-model doc)
         // but opt-in-able where raw update volume is itself the signal.
