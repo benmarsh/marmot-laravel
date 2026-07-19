@@ -64,7 +64,18 @@ return [
 
     'ignore' => [
         'Illuminate\\Foundation\\Events\\*',
+        // Request volume is plumbing/proxy, not business signal (capture-model
+        // doc, Tier 3) — and self-monitoring apps must never capture it
+        // (flush → request → flush self-ingestion).
+        'Illuminate\\Foundation\\Http\\Events\\RequestHandled',
         'Illuminate\\Routing\\Events\\*',
+        // Log-context lifecycle fires per request purely because context
+        // exists — a worse duplicate of request volume.
+        'Illuminate\\Log\\Context\\Events\\*',
+        // HTTP client internals ignored individually, not by namespace:
+        // ConnectionFailed stays captured (outbound reliability signal).
+        'Illuminate\\Http\\Client\\Events\\RequestSending',
+        'Illuminate\\Http\\Client\\Events\\ResponseReceived',
         'Illuminate\\Cache\\Events\\*',
         // Raw query/connection volume is plumbing, not business signal.
         // Slow-query detection (PRD 6.6) will be payload-based, not name-based.
@@ -90,7 +101,14 @@ return [
         // saves (save() on a clean model fires saved, nothing else) — and
         // those are noise: an import re-saving unchanged rows produced a
         // steady 56/hr phantom stream in production.
+        // `updated` left default capture 19 Jul (capture-model doc): an
+        // update event without attributes is uninterpretable — "onboarding
+        // completed" and "changed avatar" are the same stream. The
+        // transitions that matter relocate to Marmot::event(), where they
+        // arrive named. created + deleted stay: interpretable, countable
+        // existence changes — automatic model discovery is the point.
         'eloquent.saved*',
+        'eloquent.updated*',
         'eloquent.saving*',
         'eloquent.creating*',
         'eloquent.updating*',
