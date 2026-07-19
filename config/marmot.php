@@ -134,6 +134,12 @@ return [
         'eloquent.updating*',
         'eloquent.deleting*',
         'eloquent.restoring*',
+        // Soft-delete qualifiers duplicate `deleted` (a soft delete fires
+        // deleted AND trashed; a force delete fires deleted AND
+        // forceDeleted) — `deleted` alone is the existence-change signal.
+        'eloquent.trashed*',
+        'eloquent.forceDeleted*',
+        'eloquent.forceDeleting*',
         'bootstrapping*',
         'bootstrapped*',
         'composing*',
