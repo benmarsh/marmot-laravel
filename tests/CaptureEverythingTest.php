@@ -44,6 +44,16 @@ class CaptureEverythingTest extends TestCase
             'Illuminate\Log\Context\Events\ContextDehydrating',
             'Illuminate\Http\Client\Events\RequestSending',
             'Illuminate\Http\Client\Events\ResponseReceived',
+            // Queue worker mechanics (JobQueued/Processed/Failed stay).
+            'Illuminate\Queue\Events\JobProcessing',
+            'Illuminate\Queue\Events\Looping',
+            'Illuminate\Queue\Events\WorkerStopping',
+            // Auth plumbing and per-request auth shadows.
+            'Illuminate\Auth\Events\Attempting',
+            'Illuminate\Auth\Events\Authenticated',
+            'Laravel\Sanctum\Events\TokenAuthenticated',
+            'Illuminate\Mail\Events\MessageSending',
+            'Filament\Actions\Events\ActionCalled',
         ];
 
         $captured = [
@@ -57,6 +67,11 @@ class CaptureEverythingTest extends TestCase
             'Illuminate\Console\Events\ScheduledTaskSkipped',
             // Outbound reliability stays captured (individual ignores above).
             'Illuminate\Http\Client\Events\ConnectionFailed',
+            // The queue signals that mean something.
+            'Illuminate\Queue\Events\JobQueued',
+            'Illuminate\Queue\Events\JobProcessed',
+            'Illuminate\Queue\Events\JobFailed',
+            'Illuminate\Auth\Events\Login',
         ];
 
         foreach ([...$ignored, ...$captured] as $eventName) {

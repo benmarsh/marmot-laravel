@@ -76,6 +76,31 @@ return [
         // ConnectionFailed stays captured (outbound reliability signal).
         'Illuminate\\Http\\Client\\Events\\RequestSending',
         'Illuminate\\Http\\Client\\Events\\ResponseReceived',
+        // Queue mechanics, transitional-pairs rule: JobQueued (demand),
+        // JobProcessed (throughput + worker-death dead-man's-switch) and
+        // JobFailed (terminal failures) stay; the rest is worker plumbing.
+        'Illuminate\\Queue\\Events\\JobQueueing',
+        'Illuminate\\Queue\\Events\\JobPopping',
+        'Illuminate\\Queue\\Events\\JobPopped',
+        'Illuminate\\Queue\\Events\\JobProcessing',
+        'Illuminate\\Queue\\Events\\JobExceptionOccurred',
+        'Illuminate\\Queue\\Events\\JobReleasedAfterException',
+        'Illuminate\\Queue\\Events\\Looping',
+        'Illuminate\\Queue\\Events\\WorkerStopping',
+        'Illuminate\\Queue\\Events\\QueueBusy',
+        // Auth plumbing: Attempting/Validated are Login's transitional pair;
+        // Authenticated and Sanctum's TokenAuthenticated fire per request —
+        // request-volume shadows. Login/Logout/Registered/Failed/Lockout
+        // stay captured.
+        'Illuminate\\Auth\\Events\\Attempting',
+        'Illuminate\\Auth\\Events\\Validated',
+        'Illuminate\\Auth\\Events\\Authenticated',
+        'Laravel\\Sanctum\\Events\\TokenAuthenticated',
+        // Transitional pairs of MessageSent / NotificationSent.
+        'Illuminate\\Mail\\Events\\MessageSending',
+        'Illuminate\\Notifications\\Events\\NotificationSending',
+        // Admin-panel UI plumbing (the host app's own dashboards).
+        'Filament\\*',
         'Illuminate\\Cache\\Events\\*',
         // Raw query/connection volume is plumbing, not business signal.
         // Slow-query detection (PRD 6.6) will be payload-based, not name-based.
