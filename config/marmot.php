@@ -126,14 +126,9 @@ return [
         // saves (save() on a clean model fires saved, nothing else) — and
         // those are noise: an import re-saving unchanged rows produced a
         // steady 56/hr phantom stream in production.
-        // `updated` left default capture 19 Jul (capture-model doc): an
-        // update event without attributes is uninterpretable — "onboarding
-        // completed" and "changed avatar" are the same stream. The
-        // transitions that matter relocate to Marmot::event(), where they
-        // arrive named. created + deleted stay: interpretable, countable
-        // existence changes — automatic model discovery is the point.
+        // (`updated` is gated by the capture_updates flag below, not listed
+        // here — it's a capture-mode choice, not enumerable noise.)
         'eloquent.saved*',
-        'eloquent.updated*',
         'eloquent.saving*',
         'eloquent.creating*',
         'eloquent.updating*',
@@ -146,5 +141,19 @@ return [
         // Deploy-time artisan plumbing (cache:clearing / cache:cleared).
         'cache:*',
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Capture eloquent.updated events
+    |--------------------------------------------------------------------------
+    | OFF by default (19 Jul capture-model decision): an update event without
+    | attributes is uninterpretable — "onboarding completed" and "changed
+    | avatar" are the same stream — and the transitions that matter belong in
+    | named Marmot::event() calls. Opt in per app when raw update VOLUME is
+    | itself the signal you want (e.g. an import's content-freshness pulse),
+    | typically as a bridge until explicit events replace it.
+    */
+
+    'capture_updates' => env('MARMOT_CAPTURE_UPDATES', false),
 
 ];
