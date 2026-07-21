@@ -1,6 +1,15 @@
 {
     "name": "marmot/laravel",
-    "description": "Marmot Laravel SDK — ships per-minute business event counts to Marmot.",
+    "description": "Business-activity monitoring for Laravel: zero-config event capture, per-minute counts, flatline and anomaly alerts via Marmot.",
+    "keywords": [
+        "laravel",
+        "monitoring",
+        "business-activity",
+        "anomaly-detection",
+        "flatline",
+        "alerting",
+        "observability"
+    ],
     "type": "library",
     "license": "MIT",
     "require": {
