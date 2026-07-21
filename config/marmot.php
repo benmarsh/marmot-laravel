@@ -34,6 +34,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Worker flush interval (seconds)
+    |--------------------------------------------------------------------------
+    | Long-running queue workers flush the buffer between jobs and on idle
+    | loops, at most once per this many seconds. Ingest buckets counts per
+    | minute, so sub-minute delivery is plenty; raising this trades
+    | freshness for fewer requests from very busy workers.
+    */
+
+    'worker_flush_seconds' => 15,
+
+    /*
+    |--------------------------------------------------------------------------
     | Canary heartbeat
     |--------------------------------------------------------------------------
     | When enabled (and the SDK is active), a marmot.canary event fires every

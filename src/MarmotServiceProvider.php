@@ -78,6 +78,22 @@ class MarmotServiceProvider extends ServiceProvider
 
         $this->app->terminating(fn () => $this->app->make(EventBuffer::class)->flush());
 
+        // Queue-worker daemons never terminate — see WorkerFlush. One
+        // debounced singleton across all three events, so job completions
+        // and idle loops share the same clock. Resolved lazily: eager
+        // construction here would fix EventBuffer's client before the
+        // marmot.http_client seam can be bound.
+        $this->app->singleton(Support\WorkerFlush::class, fn ($app) => new Support\WorkerFlush(
+            $app->make(EventBuffer::class),
+            (float) config('marmot.worker_flush_seconds', 15),
+        ));
+
+        Event::listen([
+            \Illuminate\Queue\Events\JobProcessed::class,
+            \Illuminate\Queue\Events\JobFailed::class,
+            \Illuminate\Queue\Events\Looping::class,
+        ], fn () => $this->app->make(Support\WorkerFlush::class)());
+
         // Console contexts (artisan commands, seeders, imports) never reach
         // terminating() — a shutdown hook is the backstop. flush() is a no-op
         // on an empty buffer, so double-flushing is safe.
