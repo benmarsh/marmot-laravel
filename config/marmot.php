@@ -116,6 +116,15 @@ return [
         'Illuminate\\Console\\Events\\ScheduledBackgroundTaskFinished',
         'Illuminate\\Session\\*',
         'Illuminate\\View\\*',
+        // Vendor lifecycle events that shadow signals we already capture.
+        // Media added/cleared duplicate the Media model's created/deleted
+        // rows 1:1 (model discovery keeps vendor models); backup lifecycle
+        // (DumpingDatabase, ManifestWasCreated…) shadows the backup:run
+        // schedule streams, which are the real cron dead-man's-switch —
+        // and failures still surface via schedule.failed + the failure
+        // notification.
+        'Spatie\\MediaLibrary\\MediaCollections\\Events\\*',
+        'Spatie\\Backup\\Events\\*',
         'eloquent.booting*',
         'eloquent.booted*',
         'eloquent.retrieved*',

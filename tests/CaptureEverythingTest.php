@@ -54,11 +54,21 @@ class CaptureEverythingTest extends TestCase
             'Laravel\Sanctum\Events\TokenAuthenticated',
             'Illuminate\Mail\Events\MessageSending',
             'Filament\Actions\Events\ActionCalled',
+            // Vendor shadows (20 Jul noise audit): media events duplicate
+            // the Media model's created/deleted rows; backup lifecycle
+            // shadows the backup:run schedule streams.
+            'Spatie\MediaLibrary\MediaCollections\Events\MediaHasBeenAddedEvent',
+            'Spatie\MediaLibrary\MediaCollections\Events\CollectionHasBeenClearedEvent',
+            'Spatie\Backup\Events\BackupHasFailed',
+            'Spatie\Backup\Events\DumpingDatabase',
         ];
 
         $captured = [
             'eloquent.created: App\Models\Order',
             'eloquent.deleted: App\Models\Order',
+            // Vendor MODEL rows stay — model discovery keeps vendor models;
+            // only the shadowing vendor lifecycle events are ignored.
+            'eloquent.created: Spatie\MediaLibrary\MediaCollections\Models\Media',
             'Illuminate\Auth\Events\Registered',
             'App\Events\OrderPlaced',
             // The cron dead-man's-switch trio (PRD 6.6).
