@@ -54,12 +54,12 @@ class CaptureEverythingTest extends TestCase
             'Laravel\Sanctum\Events\TokenAuthenticated',
             'Illuminate\Mail\Events\MessageSending',
             'Filament\Actions\Events\ActionCalled',
-            // Vendor shadows (20 Jul noise audit): media events duplicate
-            // the Media model's created/deleted rows; backup lifecycle
-            // shadows the backup:run schedule streams.
+            // Vendor shadows (20-21 Jul noise audit): media events duplicate
+            // the Media model's created/deleted rows; backup SUCCESS
+            // lifecycle shadows the backup:run schedule streams.
             'Spatie\MediaLibrary\MediaCollections\Events\MediaHasBeenAddedEvent',
             'Spatie\MediaLibrary\MediaCollections\Events\CollectionHasBeenClearedEvent',
-            'Spatie\Backup\Events\BackupHasFailed',
+            'Spatie\Backup\Events\BackupWasSuccessful',
             'Spatie\Backup\Events\DumpingDatabase',
         ];
 
@@ -82,6 +82,10 @@ class CaptureEverythingTest extends TestCase
             'Illuminate\Queue\Events\JobProcessed',
             'Illuminate\Queue\Events\JobFailed',
             'Illuminate\Auth\Events\Login',
+            // Backup FAILURE signals stay — the 19 Jul never-a-whitelist
+            // ruling; partial failures can exit zero past schedule.failed.
+            'Spatie\Backup\Events\BackupHasFailed',
+            'Spatie\Backup\Events\UnhealthyBackupWasFound',
         ];
 
         foreach ([...$ignored, ...$captured] as $eventName) {

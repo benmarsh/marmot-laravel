@@ -130,13 +130,20 @@ return [
         'Illuminate\\View\\*',
         // Vendor lifecycle events that shadow signals we already capture.
         // Media added/cleared duplicate the Media model's created/deleted
-        // rows 1:1 (model discovery keeps vendor models); backup lifecycle
-        // (DumpingDatabase, ManifestWasCreated…) shadows the backup:run
-        // schedule streams, which are the real cron dead-man's-switch —
-        // and failures still surface via schedule.failed + the failure
-        // notification.
+        // rows 1:1 in production (model discovery keeps vendor models);
+        // backup success/lifecycle shadows the backup:run schedule streams,
+        // so those are ignored individually, not by namespace: the FAILURE
+        // events (BackupHasFailed, CleanupHasFailed, UnhealthyBackupWasFound)
+        // STAY captured — BackupHasFailed fires on partial failures where
+        // the command still exits zero, a mode schedule.failed misses
+        // (19 Jul audit ruling; production showed 3 vs 2).
         'Spatie\\MediaLibrary\\MediaCollections\\Events\\*',
-        'Spatie\\Backup\\Events\\*',
+        'Spatie\\Backup\\Events\\BackupZipWasCreated',
+        'Spatie\\Backup\\Events\\BackupManifestWasCreated',
+        'Spatie\\Backup\\Events\\BackupWasSuccessful',
+        'Spatie\\Backup\\Events\\CleanupWasSuccessful',
+        'Spatie\\Backup\\Events\\DumpingDatabase',
+        'Spatie\\Backup\\Events\\HealthyBackupWasFound',
         'eloquent.booting*',
         'eloquent.booted*',
         'eloquent.retrieved*',
