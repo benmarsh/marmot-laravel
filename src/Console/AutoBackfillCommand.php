@@ -6,23 +6,28 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Marmot\Laravel\Support\Backfill;
+use Marmot\Laravel\Support\EventBuffer;
 use Marmot\Laravel\Support\ModelStreams;
 use Throwable;
 
 /**
- * The standing rule: any table-backed stream that hasn't been backfilled
- * yet, gets backfilled.
+ * Send anything outstanding: for every stream that has fired but whose
+ * history Marmot hasn't got yet, ship it.
  *
- * Enabled with MARMOT_BACKFILL=true and run from the host app's scheduler,
- * so a customer's baselines exist within minutes of installing instead of
- * after a fortnight of watching. Deliberately a standing preference rather
- * than a one-shot at install: a model added next year gets the same instant
- * baseline the day it ships, and flipping the flag on later catches
- * everything that came before.
+ * Marmot learns what normal looks like by watching, which takes a fortnight.
+ * Anything backed by a table already has that history, so the moment a
+ * stream first fires, the rows behind it get sent too — and the moment
+ * arrives already baselined rather than counting down.
  *
- * No queue needed. This already runs in a CLI process with nobody waiting
- * on it, which is the only reason the work needed getting off the request
- * path in the first place.
+ * Firing is the trigger, not a timer and not a button. It keeps this
+ * self-selecting: only streams the app genuinely produces get a history, so
+ * nothing appears that isn't real, and nothing has to be asked for. Over the
+ * first day an app fills in as it reveals itself.
+ *
+ * Runs every minute from the host's scheduler and costs a few cache reads
+ * when there is nothing outstanding. No queue: this is already a CLI process
+ * with nobody waiting on it, which was the only reason the work needed
+ * getting off the request path at all.
  */
 class AutoBackfillCommand extends Command
 {
@@ -30,8 +35,8 @@ class AutoBackfillCommand extends Command
 
     private const RETRY_PREFIX = 'marmot:backfill-retry:';
 
-    /** Long enough that a never-live model costs ~4 scans a day, not ~96. */
-    private const RETRY_AFTER_SECONDS = 21_600; // 6 hours
+    /** Just long enough to let an in-flight flush reach the server. */
+    private const RETRY_AFTER_SECONDS = 300; // 5 minutes
 
     protected $signature = 'marmot:backfill-auto
         {--weeks= : History to fetch (default marmot.backfill.weeks)}
@@ -74,7 +79,15 @@ class AutoBackfillCommand extends Command
         // Sequential by construction: one table scan at a time keeps the
         // load on the customer's database bounded and predictable.
         foreach (ModelStreams::all() as $stream => $candidate) {
-            if (! $this->option('force') && ($this->alreadyDone($stream) || $this->backingOff($stream))) {
+            if ($this->option('force')) {
+                // Deliberate operator action: skip every gate below.
+            } elseif ($this->alreadyDone($stream) || $this->backingOff($stream)) {
+                continue;
+            } elseif (! $this->hasFired($stream)) {
+                // Nothing to catch up on: this model has never fired, so
+                // Marmot doesn't know the stream exists and charting its
+                // table would invent a moment the app doesn't have. Costs
+                // one cache read — crucially, no table scan.
                 continue;
             }
 
@@ -186,13 +199,23 @@ class AutoBackfillCommand extends Command
         }
     }
 
+    /** Has this stream actually fired? EventBuffer notes it on flush. */
+    private function hasFired(string $stream): bool
+    {
+        try {
+            return Cache::has(EventBuffer::OBSERVED_PREFIX.md5($stream));
+        } catch (Throwable) {
+            return false; // No cache: wait for marmot:backfill to be run by hand.
+        }
+    }
+
     /**
      * Is this stream serving a back-off from a previous "not ready"?
      *
-     * Without this the scheduler rescans every not-yet-live model's table
-     * every quarter hour, forever — on a real app that was eleven tables,
-     * ~1,000 pointless scans a day. A monitoring tool has no business
-     * doing that to the database it is supposed to be watching over.
+     * Now a rare race rather than the norm: a stream only gets here after
+     * firing, so the server learns about it on the same flush. The back-off
+     * covers the seconds in between, not models that will never appear —
+     * those are filtered by hasFired() before any table is touched.
      */
     private function backingOff(string $stream): bool
     {

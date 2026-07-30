@@ -81,15 +81,16 @@ class MarmotServiceProvider extends ServiceProvider
         }
 
         // Instant baselines for table-backed streams (MARMOT_BACKFILL).
-        // runInBackground so a long historical count doesn't hold up the rest
-        // of the tick; withoutOverlapping so a slow one can't stack on
-        // itself. Quarter-hourly: streams have to be discovered live before
-        // they can be backfilled, so this is a retry cadence as much as a
-        // schedule — and it costs nothing once every stream is marked done.
+        // Every minute, so a stream's history lands about as fast as the
+        // stream itself does — the point is that a moment shows up already
+        // baselined, and a quarter-hour window is long enough to miss
+        // someone's first look at the panel. Costs a few cache reads when
+        // there is nothing outstanding. runInBackground so a long count
+        // can't hold up the tick; withoutOverlapping so it can't stack.
         if (config('marmot.backfill.automatic')) {
             $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
                 $schedule->command('marmot:backfill-auto')
-                    ->everyFifteenMinutes()
+                    ->everyMinute()
                     ->runInBackground()
                     ->withoutOverlapping()
                     ->name('marmot-backfill-auto');

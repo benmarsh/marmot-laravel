@@ -4,11 +4,15 @@ namespace Marmot\Laravel\Support;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\ClientInterface;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 class EventBuffer
 {
     public const SDK_VERSION = '0.1.0';
+
+    /** Shared with AutoBackfillCommand: streams seen firing, pending history. */
+    public const OBSERVED_PREFIX = 'marmot:observed:';
 
     private const KEY_DELIMITER = "\x00";
 
@@ -70,6 +74,8 @@ class EventBuffer
                 return;
             }
 
+            $this->noteObservable($events);
+
             $timeout = (float) config('marmot.timeout', 1.0);
 
             $this->client()->request('POST', $endpoint, [
@@ -95,6 +101,41 @@ class EventBuffer
             ]);
         } catch (Throwable) {
             // Swallowed silently, per the delivery NFR.
+        }
+    }
+
+    /**
+     * Note which model-backed streams have actually fired, so the scheduler
+     * can send their history a minute later — Marmot catching up on what it
+     * has just learned exists.
+     *
+     * Firing is the trigger deliberately: a stream that has never fired is
+     * one Marmot knows nothing about, so charting its table would invent a
+     * moment the app doesn't have. Waiting for the first event means only
+     * real activity gets a history behind it.
+     *
+     * Kept cheap because this runs on the request path: off entirely unless
+     * backfill is enabled, only eloquent.created streams (the sole
+     * backfillable kind), and add() rather than put() so a stream already
+     * noted costs one no-op write and nothing else.
+     *
+     * @param  array<int, array{stream: string, minute: string, count: int}>  $events
+     */
+    private function noteObservable(array $events): void
+    {
+        if (! config('marmot.backfill.automatic')) {
+            return;
+        }
+
+        try {
+            foreach (array_unique(array_column($events, 'stream')) as $stream) {
+                if (str_starts_with($stream, 'eloquent.created: ')) {
+                    Cache::add(self::OBSERVED_PREFIX.md5($stream), time(), 2_592_000);
+                }
+            }
+        } catch (Throwable) {
+            // No cache: history simply waits for the operator to run
+            // marmot:backfill by hand. Never the host app's problem.
         }
     }
 

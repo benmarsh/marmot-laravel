@@ -68,6 +68,15 @@ class AutoBackfillTest extends TestCase
         for ($i = 0; $i < $count; $i++) {
             Fixtures\Order::create(['created_at' => $hour, 'updated_at' => $hour]);
         }
+
+        // Rows existing isn't enough — history is only sent for streams that
+        // have actually fired. EventBuffer notes that on flush.
+        $this->fired('eloquent.created: '.Fixtures\Order::class);
+    }
+
+    private function fired(string $stream): void
+    {
+        Cache::add(\Marmot\Laravel\Support\EventBuffer::OBSERVED_PREFIX.md5($stream), time(), 86_400);
     }
 
     private function okDryRun(int $overlapHours = 0, int $live = 0, int $backfill = 0): Response
@@ -101,6 +110,43 @@ class AutoBackfillTest extends TestCase
         $this->assertTrue($this->payload(0)['dry_run']);
         $this->assertFalse($this->payload(1)['dry_run']);
         $this->assertSame('eloquent.created: Marmot\Laravel\Tests\Fixtures\Order', $this->payload(1)['stream']);
+    }
+
+    /**
+     * Firing is the trigger. A model whose table has rows but which has
+     * never fired is not a moment the app has — charting it would invent
+     * one, and rescanning its table forever would tax the database Marmot
+     * is meant to look after. Note this costs no scan and no request.
+     */
+    public function test_a_model_that_has_never_fired_is_left_alone(): void
+    {
+        Fixtures\Order::create(['created_at' => '2026-08-27 10:15:00', 'updated_at' => '2026-08-27 10:15:00']);
+        // Deliberately NOT marked as fired.
+
+        $this->artisan('marmot:backfill-auto')->assertSuccessful();
+
+        $this->assertSame([], $this->history);
+    }
+
+    /** Once it fires, its history follows on the next tick. */
+    public function test_history_follows_as_soon_as_a_stream_fires(): void
+    {
+        Fixtures\Order::create(['created_at' => '2026-08-27 10:15:00', 'updated_at' => '2026-08-27 10:15:00']);
+
+        $this->artisan('marmot:backfill-auto')->assertSuccessful();
+        $this->assertSame([], $this->history);
+
+        $this->fired('eloquent.created: '.Fixtures\Order::class);
+
+        $this->mock->append(
+            $this->okDryRun(),
+            new Response(200, [], json_encode(['inserted' => 1, 'skipped' => 0])),
+        );
+
+        $this->artisan('marmot:backfill-auto')->assertSuccessful();
+
+        $this->assertCount(2, $this->history);
+        $this->assertSame('eloquent.created: '.Fixtures\Order::class, $this->payload(1)['stream']);
     }
 
     public function test_it_does_nothing_when_the_flag_is_off(): void
@@ -185,8 +231,11 @@ class AutoBackfillTest extends TestCase
         $this->artisan('marmot:backfill-auto')->assertSuccessful();
         $this->assertCount(1, $this->history);
 
-        // Once the back-off lapses it tries again and succeeds.
-        Carbon::setTestNow(now()->addHours(7));
+        // Once the short back-off lapses it tries again and succeeds. Short
+        // because a stream only reaches here after firing, so the server is
+        // moments away from knowing about it — this covers the gap between
+        // flush and ingest, not a stream that may never appear.
+        Carbon::setTestNow(now()->addMinutes(6));
 
         $this->mock->append(
             $this->okDryRun(),
@@ -245,6 +294,7 @@ class AutoBackfillTest extends TestCase
         Fixtures\Nested\Deep\Reading::create([
             'created_at' => '2026-08-27 10:15:00', 'updated_at' => '2026-08-27 10:15:00',
         ]);
+        $this->fired('eloquent.created: '.Fixtures\Nested\Deep\Reading::class);
 
         // Order has no rows in this test, so only the nested model ships.
         $this->mock->append(
