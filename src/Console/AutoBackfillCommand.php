@@ -28,6 +28,11 @@ class AutoBackfillCommand extends Command
 {
     private const DONE_PREFIX = 'marmot:backfilled:';
 
+    private const RETRY_PREFIX = 'marmot:backfill-retry:';
+
+    /** Long enough that a never-live model costs ~4 scans a day, not ~96. */
+    private const RETRY_AFTER_SECONDS = 21_600; // 6 hours
+
     protected $signature = 'marmot:backfill-auto
         {--weeks= : History to fetch (default marmot.backfill.weeks)}
         {--force : Re-backfill streams already done}';
@@ -69,7 +74,7 @@ class AutoBackfillCommand extends Command
         // Sequential by construction: one table scan at a time keeps the
         // load on the customer's database bounded and predictable.
         foreach (ModelStreams::all() as $stream => $candidate) {
-            if (! $this->option('force') && $this->alreadyDone($stream)) {
+            if (! $this->option('force') && ($this->alreadyDone($stream) || $this->backingOff($stream))) {
                 continue;
             }
 
@@ -119,8 +124,14 @@ class AutoBackfillCommand extends Command
         $preview = Backfill::send($stream, $hours, dryRun: true);
 
         if (! $preview['ok']) {
-            // Usually "not seen live yet" — discovery hasn't reached this
-            // stream. Leave it unmarked; the next scheduled run picks it up.
+            // Usually "not seen live yet": the model exists but has never
+            // fired a created event. Retry, because it may fire tomorrow —
+            // but back off hard, because plenty of models (Settings, a
+            // MagicLink, a rarely-touched lookup) will NEVER fire, and
+            // rescanning their tables every quarter hour forever would make
+            // this a permanent tax on the host app's database. Backing off
+            // costs at most a few hours' delay on a stream that does appear.
+            $this->retryLater($stream);
             $this->line("Not ready: {$stream} — {$preview['message']}");
 
             return false;
@@ -172,6 +183,32 @@ class AutoBackfillCommand extends Command
             Cache::forever(self::DONE_PREFIX.md5($stream), time());
         } catch (Throwable) {
             // No cache: worst case we recount next tick and write nothing.
+        }
+    }
+
+    /**
+     * Is this stream serving a back-off from a previous "not ready"?
+     *
+     * Without this the scheduler rescans every not-yet-live model's table
+     * every quarter hour, forever — on a real app that was eleven tables,
+     * ~1,000 pointless scans a day. A monitoring tool has no business
+     * doing that to the database it is supposed to be watching over.
+     */
+    private function backingOff(string $stream): bool
+    {
+        try {
+            return Cache::has(self::RETRY_PREFIX.md5($stream));
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    private function retryLater(string $stream): void
+    {
+        try {
+            Cache::put(self::RETRY_PREFIX.md5($stream), time(), self::RETRY_AFTER_SECONDS);
+        } catch (Throwable) {
+            // No cache: falls back to retrying every tick, as before.
         }
     }
 }

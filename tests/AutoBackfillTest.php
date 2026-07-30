@@ -163,8 +163,14 @@ class AutoBackfillTest extends TestCase
         $this->assertTrue($this->payload(0)['dry_run']);
     }
 
-    /** A stream discovery hasn't reached yet is retried, not written off. */
-    public function test_a_stream_not_yet_seen_live_is_retried_next_run(): void
+    /**
+     * A stream discovery hasn't reached yet is retried, not written off —
+     * but only after a back-off. Plenty of models never fire a created
+     * event at all (settings, lookup tables), and rescanning their tables
+     * every scheduler tick forever would tax the database Marmot is meant
+     * to be looking after.
+     */
+    public function test_a_stream_not_yet_seen_live_backs_off_before_retrying(): void
     {
         $this->seedOrders('2026-08-27 10:15:00');
 
@@ -173,8 +179,15 @@ class AutoBackfillTest extends TestCase
         ])));
 
         $this->artisan('marmot:backfill-auto')->assertSuccessful();
+        $this->assertCount(1, $this->history);
 
-        // Not marked done, so the next scheduled run tries again.
+        // Immediately afterwards: skipped entirely, no scan, no request.
+        $this->artisan('marmot:backfill-auto')->assertSuccessful();
+        $this->assertCount(1, $this->history);
+
+        // Once the back-off lapses it tries again and succeeds.
+        Carbon::setTestNow(now()->addHours(7));
+
         $this->mock->append(
             $this->okDryRun(),
             new Response(200, [], json_encode(['inserted' => 1, 'skipped' => 0])),
