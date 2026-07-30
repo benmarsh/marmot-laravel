@@ -67,6 +67,49 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Schema reporting (the control channel)
+    |--------------------------------------------------------------------------
+    | Off by default, and deliberately so. When enabled, the SDK tells Marmot
+    | which table sits behind each discovered stream — table name, timestamp
+    | column, approximate row count, earliest timestamp, and whether the model
+    | soft-deletes. Names and counts only; never any column values.
+    |
+    | What it buys: Marmot can offer one-click historical backfill in the
+    | panel, so a stream with a table behind it gets a full seasonal baseline
+    | in minutes instead of waiting weeks to learn one.
+    |
+    | This is your veto, and it is only ever exercised locally: no remote
+    | instruction can turn it on. Set schema_reporting_tables to consent to
+    | specific tables instead of all of them.
+    */
+
+    'schema_reporting' => env('MARMOT_SCHEMA_REPORTING', false),
+
+    'schema_reporting_tables' => [],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Backfill
+    |--------------------------------------------------------------------------
+    | models_path / models_namespace  Where marmot:backfill and the control
+    |                                 channel look for backfillable models.
+    | weeks                           Default window for marmot:backfill.
+    | read_connection                 A database connection name to read from
+    |                                 instead of the default — point this at a
+    |                                 read replica and bulk historical scans
+    |                                 never touch the connection serving
+    |                                 production writes.
+    */
+
+    'backfill' => [
+        'models_path' => null,
+        'models_namespace' => 'App\\Models',
+        'weeks' => 8,
+        'read_connection' => env('MARMOT_BACKFILL_CONNECTION'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Ignored event patterns
     |--------------------------------------------------------------------------
     | Framework plumbing only. Eloquent lifecycle events (created/updated/

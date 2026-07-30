@@ -39,7 +39,11 @@ class MarmotServiceProvider extends ServiceProvider
 
             // Registered before the enabled-guard: an unconfigured install
             // gets a helpful error from the command, not "command not found".
-            $this->commands([Console\BackfillCommand::class, Console\DeployCommand::class]);
+            $this->commands([
+                Console\BackfillCommand::class,
+                Console\DeployCommand::class,
+                Console\ProcessInstructionsCommand::class,
+            ]);
         }
 
         if (! config('marmot.enabled') || ! config('marmot.api_key')) {
@@ -73,6 +77,18 @@ class MarmotServiceProvider extends ServiceProvider
                 })
                     ->cron(config('marmot.canary_cron', '* * * * *'))
                     ->name('marmot-canary');
+            });
+        }
+
+        // Scheduler fallback for the control channel: only worth scheduling
+        // where instructions can actually be parked (no real queue) and
+        // where schema reporting has been consented to at all.
+        if (Support\SchemaReporter::enabled()) {
+            $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+                $schedule->command('marmot:process-instructions')
+                    ->everyFifteenMinutes()
+                    ->withoutOverlapping()
+                    ->name('marmot-process-instructions');
             });
         }
 

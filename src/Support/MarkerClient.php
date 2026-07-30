@@ -48,9 +48,6 @@ class MarkerClient
 
     private function client(): ClientInterface
     {
-        // Same isolation rule as EventBuffer: never the host app's client.
-        return $this->client ??= app()->bound('marmot.http_client')
-            ? app('marmot.http_client')
-            : new Client;
+        return $this->client ??= HttpClient::make();
     }
 }

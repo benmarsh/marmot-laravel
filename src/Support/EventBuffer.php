@@ -8,7 +8,7 @@ use Throwable;
 
 class EventBuffer
 {
-    public const SDK_VERSION = '0.1.0';
+    public const SDK_VERSION = '0.2.0';
 
     private const KEY_DELIMITER = "\x00";
 
@@ -72,7 +72,25 @@ class EventBuffer
 
             $timeout = (float) config('marmot.timeout', 1.0);
 
-            $this->client()->request('POST', $endpoint, [
+            $payload = [
+                'source' => 'laravel',
+                'sdk_version' => self::SDK_VERSION,
+                // One nonce per flush: however this POST gets duplicated
+                // in transit (proxy retries, forked children re-flushing,
+                // infrastructure we haven't met yet), the server counts it
+                // once. Found the hard way: gbpm's canary — hard-capped at
+                // 60/hr by the minute guard — read 103.
+                'nonce' => bin2hex(random_bytes(16)),
+                'events' => $events,
+            ];
+
+            // The control channel rides this flush (build brief §4). Opt-in
+            // and off by default, so most installs add nothing at all.
+            if ($report = SchemaReporter::due()) {
+                $payload['schema_report'] = $report;
+            }
+
+            $response = $this->client()->request('POST', $endpoint, [
                 'timeout' => $timeout,
                 'connect_timeout' => $timeout,
                 'http_errors' => false,
@@ -81,21 +99,34 @@ class EventBuffer
                     'Content-Type' => 'application/json',
                     'Accept' => 'application/json',
                 ],
-                'json' => [
-                    'source' => 'laravel',
-                    'sdk_version' => self::SDK_VERSION,
-                    // One nonce per flush: however this POST gets duplicated
-                    // in transit (proxy retries, forked children re-flushing,
-                    // infrastructure we haven't met yet), the server counts it
-                    // once. Found the hard way: gbpm's canary — hard-capped at
-                    // 60/hr by the minute guard — read 103.
-                    'nonce' => bin2hex(random_bytes(16)),
-                    'events' => $events,
-                ],
+                'json' => $payload,
             ]);
+
+            $this->readInstructions($response);
         } catch (Throwable) {
             // Swallowed silently, per the delivery NFR.
         }
+    }
+
+    /**
+     * The response's other half (§4a step 5): a lightweight read of any
+     * instructions Marmot has queued. Parsing is cheap; the work it
+     * dispatches is not, which is why InstructionHandler only ever queues
+     * — nothing here executes a backfill inline.
+     */
+    private function readInstructions(mixed $response): void
+    {
+        if (! $response || $response->getStatusCode() !== 200) {
+            return;
+        }
+
+        $body = json_decode((string) $response->getBody(), true);
+
+        if (! is_array($body) || empty($body['instructions'])) {
+            return;
+        }
+
+        InstructionHandler::handle($body['instructions']);
     }
 
     private function client(): ClientInterface
