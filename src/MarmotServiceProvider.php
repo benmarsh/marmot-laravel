@@ -39,7 +39,11 @@ class MarmotServiceProvider extends ServiceProvider
 
             // Registered before the enabled-guard: an unconfigured install
             // gets a helpful error from the command, not "command not found".
-            $this->commands([Console\BackfillCommand::class, Console\DeployCommand::class]);
+            $this->commands([
+                Console\AutoBackfillCommand::class,
+                Console\BackfillCommand::class,
+                Console\DeployCommand::class,
+            ]);
         }
 
         if (! config('marmot.enabled') || ! config('marmot.api_key')) {
@@ -73,6 +77,22 @@ class MarmotServiceProvider extends ServiceProvider
                 })
                     ->cron(config('marmot.canary_cron', '* * * * *'))
                     ->name('marmot-canary');
+            });
+        }
+
+        // Instant baselines for table-backed streams (MARMOT_BACKFILL).
+        // runInBackground so a long historical count doesn't hold up the rest
+        // of the tick; withoutOverlapping so a slow one can't stack on
+        // itself. Quarter-hourly: streams have to be discovered live before
+        // they can be backfilled, so this is a retry cadence as much as a
+        // schedule — and it costs nothing once every stream is marked done.
+        if (config('marmot.backfill.automatic')) {
+            $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+                $schedule->command('marmot:backfill-auto')
+                    ->everyFifteenMinutes()
+                    ->runInBackground()
+                    ->withoutOverlapping()
+                    ->name('marmot-backfill-auto');
             });
         }
 

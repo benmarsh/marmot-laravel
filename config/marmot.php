@@ -67,6 +67,45 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Backfill
+    |--------------------------------------------------------------------------
+    | Marmot normally learns what "normal" looks like by watching, which takes
+    | about a fortnight. But for anything backed by a database table, the
+    | history is already there — so it can be counted up front and the
+    | baseline exists within minutes of installing.
+    |
+    | automatic          Set MARMOT_BACKFILL=true and Marmot backfills any
+    |                    table-backed stream that hasn't been done yet, from
+    |                    your scheduler. A standing preference, not a one-off:
+    |                    a model added next year gets the same treatment. No
+    |                    queue worker required.
+    | weeks              History to fetch. 8 covers the seasonal baseline;
+    |                    11 is the ceiling (2000 hours per request).
+    | max_rows           Tables bigger than this are skipped, so an unattended
+    |                    run can't become a nuisance on a huge table. Run
+    |                    marmot:backfill by hand if you want one anyway.
+    | read_connection    A connection name to read from instead of the default
+    |                    — point it at a read replica and historical scans
+    |                    never touch the connection serving production writes.
+    | models_path        Where to look for models (defaults to app/Models).
+    | models_namespace
+    |
+    | Nothing about your schema is ever sent to Marmot. Backfill is something
+    | your app decides to do, from your config, about your own tables — the
+    | only thing that leaves is the same hourly counts it already sends.
+    */
+
+    'backfill' => [
+        'automatic' => env('MARMOT_BACKFILL', false),
+        'weeks' => 8,
+        'max_rows' => 20_000_000,
+        'read_connection' => env('MARMOT_BACKFILL_CONNECTION'),
+        'models_path' => null,
+        'models_namespace' => 'App\\Models',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Ignored event patterns
     |--------------------------------------------------------------------------
     | Framework plumbing only. Eloquent lifecycle events (created/updated/

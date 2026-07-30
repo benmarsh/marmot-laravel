@@ -2,13 +2,11 @@
 
 namespace Marmot\Laravel\Console;
 
-use GuzzleHttp\Client;
-use GuzzleHttp\ClientInterface;
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Marmot\Laravel\Support\Backfill;
+use Marmot\Laravel\Support\ModelStreams;
 use Throwable;
 
 /**
@@ -29,8 +27,6 @@ class BackfillCommand extends Command
     protected $signature = 'marmot:backfill';
 
     protected $description = 'Backfill historical hourly counts from your tables into Marmot';
-
-    private ?ClientInterface $client = null;
 
     public function handle(): int
     {
@@ -119,24 +115,14 @@ class BackfillCommand extends Command
 
         $where = $this->ask('Optional WHERE clause (must match what the live event means — blank for none)', '');
 
-        // Querying the table directly (not the model) deliberately includes
-        // soft-deleted rows: capture-time truth. Hard deletes still
-        // undercount — the overlap stats below are the detector.
-        $query = DB::table($candidate['table'])
-            ->selectRaw($this->hourExpression($candidate['column']).' as hour')
-            ->selectRaw('count(*) as aggregate')
-            ->where($candidate['column'], '>=', $from);
-
-        if ($where !== '' && $where !== null) {
-            $query->whereRaw($where);
-        }
-
         $started = microtime(true);
 
         try {
-            $hours = $query->groupBy('hour')->orderBy('hour')->get()
-                ->map(fn (object $row) => ['hour' => $row->hour, 'count' => (int) $row->aggregate])
-                ->all();
+            // Shared with marmot:backfill-auto, so both paths count the same
+            // way AND both honour marmot.backfill.read_connection — this
+            // command used to query the default connection directly, which
+            // quietly bypassed the read-replica guarantee.
+            $hours = ModelStreams::hourlyCounts($candidate, $from, whereRaw: $where ?: null);
         } catch (Throwable $e) {
             $this->error('Count query failed: '.$e->getMessage());
 
@@ -157,7 +143,7 @@ class BackfillCommand extends Command
             return false;
         }
 
-        $overlap = $preview['overlap'];
+        $overlap = $preview['overlap'] ?? [];
 
         $this->line(sprintf('%d new hour(s) would be written; %d already collected live (live always wins).',
             $preview['new_hours'], $overlap['hours']));
@@ -187,84 +173,47 @@ class BackfillCommand extends Command
     }
 
     /**
+     * Shared with marmot:backfill-auto via Backfill::send, so both paths
+     * count and validate history identically.
+     *
      * @param  list<array{hour: string, count: int}>  $hours
      * @return ?array<string, mixed> decoded response, or null on failure (already reported)
      */
     private function send(string $stream, array $hours, bool $dryRun): ?array
     {
-        $endpoint = preg_replace('#/v1/events$#', '/v1/backfill', (string) config('marmot.endpoint'));
+        $result = Backfill::send($stream, $hours, $dryRun);
 
-        try {
-            $response = $this->client()->request('POST', $endpoint, [
-                'timeout' => 30,
-                'http_errors' => false,
-                'headers' => [
-                    'Authorization' => 'Bearer '.config('marmot.api_key'),
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json',
-                ],
-                'json' => [
-                    'stream' => $stream,
-                    'dry_run' => $dryRun,
-                    'hours' => $hours,
-                ],
-            ]);
-        } catch (Throwable $e) {
-            $this->error('Request failed: '.$e->getMessage());
+        if (! $result['ok']) {
+            $this->error($result['message']);
 
             return null;
         }
 
-        $body = json_decode((string) $response->getBody(), true) ?? [];
-
-        if ($response->getStatusCode() !== 200) {
-            $this->error($body['message'] ?? "Server returned {$response->getStatusCode()}.");
-
-            return null;
-        }
-
-        return $body;
+        return $result;
     }
 
     /**
      * Candidate models: everything in the configured namespace with a
      * CREATED_AT column that exists on its table.
      *
+     * Delegates to ModelStreams so the interactive command and the control
+     * channel can never disagree about what a stream means — the same
+     * two-copies drift that bit the ignore list in M1.
+     *
      * @return list<array{model: string, table: string, column: string, indexed: ?bool, rows: int, earliest: ?string}>
      */
     private function discover(): array
     {
-        $path = config('marmot.backfill.models_path') ?? app_path('Models');
-        $namespace = rtrim(config('marmot.backfill.models_namespace', 'App\\Models'), '\\');
-
         $candidates = [];
 
-        foreach (glob($path.'/*.php') ?: [] as $file) {
-            $class = $namespace.'\\'.basename($file, '.php');
-
-            if (! class_exists($class) || ! is_subclass_of($class, Model::class)) {
-                continue;
-            }
-
-            if ((new \ReflectionClass($class))->isAbstract()) {
-                continue;
-            }
-
-            $instance = new $class;
-            $table = $instance->getTable();
-            $column = $instance::CREATED_AT;
-
-            if ($column === null || ! Schema::hasTable($table) || ! Schema::hasColumn($table, $column)) {
-                continue;
-            }
-
+        foreach (ModelStreams::all() as $candidate) {
             $candidates[] = [
-                'model' => $class,
-                'table' => $table,
-                'column' => $column,
-                'indexed' => $this->hasLeftmostIndex($table, $column),
-                'rows' => $this->approximateRows($table),
-                'earliest' => $this->earliestRecord($table, $column),
+                'model' => $candidate['model'],
+                'table' => $candidate['table'],
+                'column' => $candidate['column'],
+                'indexed' => $this->hasLeftmostIndex($candidate['table'], $candidate['column']),
+                'rows' => ModelStreams::approximateRows($candidate['table']),
+                'earliest' => ModelStreams::earliestRecord($candidate['table'], $candidate['column']),
             ];
         }
 
@@ -287,75 +236,9 @@ class BackfillCommand extends Command
         }
     }
 
-    /**
-     * Approximate row count for the listing — statistics where the engine
-     * keeps them, so discovery never pays the full-scan cost it's warning
-     * about.
-     */
-    private function approximateRows(string $table): int
-    {
-        try {
-            $prefixed = DB::getTablePrefix().$table;
-
-            $approximate = match (DB::connection()->getDriverName()) {
-                'mysql', 'mariadb' => DB::selectOne(
-                    'select table_rows as aggregate from information_schema.tables where table_schema = database() and table_name = ?',
-                    [$prefixed],
-                )?->aggregate,
-                'pgsql' => DB::selectOne(
-                    'select reltuples::bigint as aggregate from pg_class where relname = ?',
-                    [$prefixed],
-                )?->aggregate,
-                default => null,
-            };
-
-            if ($approximate !== null && (int) $approximate > 0) {
-                return (int) $approximate;
-            }
-
-            return (int) DB::table($table)->count();
-        } catch (Throwable) {
-            return 0;
-        }
-    }
-
-    /**
-     * Earliest record for the listing, estimated via the primary key (the
-     * lowest id is almost always the oldest row) — never a min() over an
-     * unindexed timestamp.
-     */
-    private function earliestRecord(string $table, string $column): ?string
-    {
-        try {
-            if (! Schema::hasColumn($table, 'id')) {
-                return null;
-            }
-
-            $value = DB::table($table)->where('id', DB::table($table)->min('id'))->value($column);
-
-            return $value ? (string) $value : null;
-        } catch (Throwable) {
-            return null;
-        }
-    }
-
     /** Hour truncation is dialect-specific (the ingest upsert's usual trade). */
     private function hourExpression(string $column): string
     {
-        return match (DB::connection()->getDriverName()) {
-            'mysql', 'mariadb' => "date_format(`{$column}`, '%Y-%m-%d %H:00:00')",
-            'pgsql' => "to_char(date_trunc('hour', \"{$column}\"), 'YYYY-MM-DD HH24:00:00')",
-            default => "strftime('%Y-%m-%d %H:00:00', \"{$column}\")",
-        };
-    }
-
-    private function client(): ClientInterface
-    {
-        // 'marmot.http_client' is the test seam — never resolve the global
-        // ClientInterface binding, which host-app packages configure with
-        // their own base URIs, headers, and retry middleware.
-        return $this->client ??= $this->laravel->bound('marmot.http_client')
-            ? $this->laravel->make('marmot.http_client')
-            : new Client;
+        return ModelStreams::hourExpression($column);
     }
 }
