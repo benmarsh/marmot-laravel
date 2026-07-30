@@ -30,15 +30,13 @@ class ModelStreams
      */
     public static function all(): array
     {
-        $path = config('marmot.backfill.models_path') ?? app_path('Models');
-        $namespace = rtrim(config('marmot.backfill.models_namespace', 'App\\Models'), '\\');
+        [$path, $namespace] = self::root();
 
-        // Memoised on the container, not statically: a scan costs a glob, a
-        // reflection and two schema queries per model, and one operation can
-        // resolve several streams (a batch of instructions, a whole schema
-        // report). Container lifetime is exactly right — fresh per request,
-        // per job, and per test — where a static would serve one test's scan
-        // to the next.
+        // Memoised on the container, not statically: a scan costs a directory
+        // walk, a reflection and two schema queries per model, and one
+        // operation can resolve several streams. Container lifetime is exactly
+        // right — fresh per request, per job, and per test — where a static
+        // would serve one test's scan to the next.
         $key = 'marmot.model-streams:'.$path.'|'.$namespace;
 
         if (app()->bound($key)) {
@@ -47,9 +45,7 @@ class ModelStreams
 
         $out = [];
 
-        foreach (glob($path.'/*.php') ?: [] as $file) {
-            $class = $namespace.'\\'.basename($file, '.php');
-
+        foreach (self::classesIn($path, $namespace) as $class) {
             if (! class_exists($class) || ! is_subclass_of($class, Model::class)) {
                 continue;
             }
@@ -80,6 +76,64 @@ class ModelStreams
         app()->instance($key, $out);
 
         return $out;
+    }
+
+    /**
+     * Where to look for models, as [path, namespace].
+     *
+     * Defaults to the whole PSR-4 root (`app/` → `App\`), NOT `app/Models`.
+     * The tidy `app/Models` convention only arrived in Laravel 8, and plenty
+     * of long-lived apps — the ones with the most history worth backfilling —
+     * keep models at the app root or in domain subdirectories. Assuming
+     * `app/Models` silently found nothing on the first real app it met.
+     */
+    private static function root(): array
+    {
+        if ($configured = config('marmot.backfill.models_path')) {
+            return [
+                rtrim($configured, '/'),
+                rtrim(config('marmot.backfill.models_namespace', 'App'), '\\'),
+            ];
+        }
+
+        return [rtrim(app_path(), '/'), rtrim(app()->getNamespace(), '\\')];
+    }
+
+    /**
+     * Every class name under a PSR-4 root, walked recursively — models turn up
+     * at whatever depth an app happens to organise them (`App\AppInstall`,
+     * `App\UKSnowMap\Status`, `App\UKSnowMap\GFS\GfsRun` all coexist in the
+     * wild). Name only; nothing is loaded here.
+     *
+     * @return list<class-string>
+     */
+    private static function classesIn(string $path, string $namespace): array
+    {
+        if (! is_dir($path)) {
+            return [];
+        }
+
+        try {
+            $files = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS),
+            );
+        } catch (Throwable) {
+            return [];
+        }
+
+        $classes = [];
+
+        foreach ($files as $file) {
+            if ($file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $relative = substr($file->getPathname(), strlen($path) + 1, -4);
+
+            $classes[] = $namespace.'\\'.str_replace('/', '\\', $relative);
+        }
+
+        return $classes;
     }
 
     /** The live capture stream name for a model — the stitching contract. */

@@ -51,6 +51,11 @@ class AutoBackfillTest extends TestCase
             $table->string('body');
         });
 
+        Schema::create('readings', function (Blueprint $table) {
+            $table->id();
+            $table->timestamps();
+        });
+
         $this->mock = new MockHandler;
         $stack = HandlerStack::create($this->mock);
         $stack->push(Middleware::history($this->history));
@@ -207,6 +212,41 @@ class AutoBackfillTest extends TestCase
             $body = json_decode((string) $entry['request']->getBody(), true);
             $this->assertStringNotContainsString('Note', $body['stream']);
         }
+    }
+
+    /**
+     * Models turn up at whatever depth an app organises them — the first real
+     * app this met kept them at the app root and two levels down, and the
+     * old app/Models-only glob silently found nothing.
+     */
+    public function test_models_are_discovered_at_any_depth(): void
+    {
+        $streams = array_keys(\Marmot\Laravel\Support\ModelStreams::all());
+
+        $this->assertContains('eloquent.created: Marmot\Laravel\Tests\Fixtures\Order', $streams);
+        $this->assertContains('eloquent.created: Marmot\Laravel\Tests\Fixtures\Nested\Deep\Reading', $streams);
+    }
+
+    public function test_a_nested_model_is_backfilled_too(): void
+    {
+        Fixtures\Nested\Deep\Reading::create([
+            'created_at' => '2026-08-27 10:15:00', 'updated_at' => '2026-08-27 10:15:00',
+        ]);
+
+        // Order has no rows in this test, so only the nested model ships.
+        $this->mock->append(
+            $this->okDryRun(),
+            new Response(200, [], json_encode(['inserted' => 1, 'skipped' => 0])),
+        );
+
+        $this->artisan('marmot:backfill-auto')->assertSuccessful();
+
+        $shipped = array_map(
+            fn ($i) => json_decode((string) $this->history[$i]['request']->getBody(), true)['stream'],
+            array_keys($this->history),
+        );
+
+        $this->assertContains('eloquent.created: Marmot\Laravel\Tests\Fixtures\Nested\Deep\Reading', $shipped);
     }
 
     /** An oversized table is left to a human rather than scanned unattended. */
